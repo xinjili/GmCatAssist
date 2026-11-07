@@ -1,0 +1,18 @@
+# 统一换行符，避免 Windows 提交的文件在 Linux/macOS 上出问题
+* text=auto eol=lf
+
+# Windows 批处理必须用 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不要做换行转换
+*.jar binary
+*.apk binary
+*.aab binary
+*.png binary
+*.jpg binary
+*.keystore binary
+*.jks binary
+
+# Gradle wrapper 在 Unix 上需要可执行位
+gradlew text eol=lf

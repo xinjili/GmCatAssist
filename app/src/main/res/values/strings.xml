@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">光猫快连</string>
+    <string name="settings_title">识别设置</string>
+    <string name="admin_title">光猫后台</string>
+
+    <string name="shoot">拍照识别</string>
+    <string name="shoot_hint">对准光猫背面的标签</string>
+    <string name="reshoot">重拍</string>
+    <string name="connecting">正在尝试连接…</string>
+
+    <string name="f_ssid">无线名称 SSID</string>
+    <string name="f_wifi_pwd">WiFi 密码</string>
+    <string name="f_admin_url">后台地址</string>
+    <string name="f_admin_user">后台账号</string>
+    <string name="f_admin_pwd">后台密码</string>
+
+    <string name="connect">连接 WiFi</string>
+    <string name="open_admin">进后台</string>
+    <string name="copy">复制</string>
+    <string name="copied">已复制</string>
+</resources>
