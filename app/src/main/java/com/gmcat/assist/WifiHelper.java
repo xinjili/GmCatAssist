@@ -28,12 +28,36 @@ public final class WifiHelper {
         }
     }
 
-    /** 扫描 WiFi 所需的运行时权限。Android 13 起换成附近设备权限。 */
-    public static String permission() {
+    /**
+     * 扫描 WiFi 需要申请的权限。
+     *
+     * <p>Android 13 起官方推荐 NEARBY_WIFI_DEVICES，但实测在 MIUI / HyperOS 上
+     * 常见「权限已授予却拿不到任何扫描结果」。所以同时申请传统的定位权限作为
+     * 备用路径 —— 老 API 虽然被标记为过时，兼容性反而更好。
+     */
+    public static String[] permissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return Manifest.permission.NEARBY_WIFI_DEVICES;
+            return new String[]{
+                    Manifest.permission.NEARBY_WIFI_DEVICES,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+            };
         }
-        return Manifest.permission.ACCESS_FINE_LOCATION;
+        return new String[]{Manifest.permission.ACCESS_FINE_LOCATION};
+    }
+
+    /** 任一权限被授予即可尝试扫描。 */
+    public static boolean canScan(Context ctx) {
+        for (String p : permissions()) {
+            if (ctx.checkSelfPermission(p) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 兼容旧调用：优先返回 13+ 的新权限名。 */
+    public static String permission() {
+        return permissions()[0];
     }
 
     /** Android 12 及以下，扫描 WiFi 必须打开系统定位开关，否则拿不到列表。 */

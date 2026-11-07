@@ -431,7 +431,7 @@ public class MainActivity extends Activity {
             setHint(hint24g, "", R.color.text_hint);
             return;
         }
-        if (checkSelfPermission(WifiHelper.permission()) != PackageManager.PERMISSION_GRANTED) {
+        if (!WifiHelper.canScan(this)) {
             setHint(hint5g, "待授权", R.color.text_hint);
             setHint(hint24g, "", R.color.text_hint);
             return;
@@ -493,13 +493,31 @@ public class MainActivity extends Activity {
         tv.setTextColor(getColor(colorRes));
     }
 
+    /** 跳到本应用的系统设置页，方便手动开权限。 */
+    private void openAppSettings() {
+        try {
+            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            i.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+        } catch (Exception e) {
+            toast("打不开系统设置页");
+        }
+    }
+
     /**
      * 列出附近扫到的 WiFi，点一项就填进对应的频段。
      * 用来解决「标签上推出来的名字和光猫实际名字不一致」的情况。
      */
     private void showScanListDialog(boolean for5g) {
-        if (checkSelfPermission(WifiHelper.permission()) != PackageManager.PERMISSION_GRANTED) {
-            toast("没有「附近的设备」权限，读不到周边列表");
+        if (!WifiHelper.canScan(this)) {
+            new AlertDialog.Builder(this)
+                    .setTitle("需要「附近的设备」权限")
+                    .setMessage("扫描周边 WiFi 需要这个权限。\n\n"
+                            + "如果已经授权却仍然扫不到，多半是系统限制了 WiFi 扫描，"
+                            + "属于系统行为，不影响连接功能。")
+                    .setPositiveButton("去设置", (d, w) -> openAppSettings())
+                    .setNegativeButton("知道了", null)
+                    .show();
             return;
         }
         WifiManager wm = WifiHelper.wifi(this);
@@ -514,7 +532,17 @@ public class MainActivity extends Activity {
             ui.post(() -> {
                 setLoading(false);
                 if (results == null || results.isEmpty()) {
-                    toast("没拿到周边 WiFi 列表，可能是权限或系统限制");
+                    new AlertDialog.Builder(this)
+                            .setTitle("没拿到周边 WiFi 列表")
+                            .setMessage("权限已授予，但系统没有返回扫描结果。"
+                                    + "常见原因：\n\n"
+                                    + "· 这台手机的系统限制了 WiFi 扫描\n"
+                                    + "· 系统位置信息开关未打开\n"
+                                    + "· 刚打开 WiFi，等待几秒再试\n\n"
+                                    + "这不影响连接功能，只是看不到「已扫到」标记。")
+                            .setPositiveButton("去权限设置", (d, w) -> openAppSettings())
+                            .setNegativeButton("知道了", null)
+                            .show();
                     return;
                 }
                 List<ScanResult> list = new ArrayList<>();
@@ -578,10 +606,10 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if (checkSelfPermission(WifiHelper.permission()) != PackageManager.PERMISSION_GRANTED) {
+        if (!WifiHelper.canScan(this)) {
             afterPermissionAction = true;
             pendingWant5g = want5g;
-            requestPermissions(new String[]{WifiHelper.permission()}, REQ_PERM);
+            requestPermissions(WifiHelper.permissions(), REQ_PERM);
             return;
         }
 
@@ -777,8 +805,13 @@ public class MainActivity extends Activity {
         if (requestCode != REQ_PERM) {
             return;
         }
-        boolean granted = grantResults.length > 0
-                && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        boolean granted = false;
+        for (int r : grantResults) {
+            if (r == PackageManager.PERMISSION_GRANTED) {
+                granted = true;
+                break;
+            }
+        }
         if (granted) {
             scanBands();
             if (afterPermissionAction) {
