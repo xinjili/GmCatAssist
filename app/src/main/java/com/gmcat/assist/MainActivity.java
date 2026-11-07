@@ -12,7 +12,9 @@ import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -26,6 +28,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -427,6 +430,13 @@ public class MainActivity extends Activity {
             setHint(hint24g, "", R.color.text_hint);
             return;
         }
+        // Android 12 及以下扫 WiFi 依赖定位权限，定位开关关着的话结果恒为空
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                && !WifiHelper.locationEnabled(this)) {
+            setHint(hint5g, "需开定位", R.color.warn);
+            setHint(hint24g, "", R.color.text_hint);
+            return;
+        }
 
         final String s5 = etSsid5g.getText().toString().trim();
         final String s24 = etSsid24g.getText().toString().trim();
@@ -435,9 +445,17 @@ public class MainActivity extends Activity {
         setHint(hint24g, "扫描中", R.color.text_secondary);
 
         io.execute(() -> {
-            boolean has5 = !s5.isEmpty() && WifiHelper.exists(MainActivity.this, s5);
-            boolean has24 = !s24.isEmpty() && WifiHelper.exists(MainActivity.this, s24);
+            List<ScanResult> results = WifiHelper.scanNow(MainActivity.this);
+            boolean scanOk = results != null && !results.isEmpty();
+            boolean has5 = WifiHelper.has(results, s5);
+            boolean has24 = WifiHelper.has(results, s24);
             ui.post(() -> {
+                if (!scanOk) {
+                    // 没拿到列表 ≠ 没有这个网络，此时不能替用户改频段
+                    setHint(hint5g, "扫描不可用", R.color.warn);
+                    setHint(hint24g, "", R.color.text_hint);
+                    return;
+                }
                 setHint(hint5g, has5 ? "已扫到" : "未扫到",
                         has5 ? R.color.ok : R.color.warn);
                 setHint(hint24g, has24 ? "已扫到" : "未扫到",
@@ -493,6 +511,13 @@ public class MainActivity extends Activity {
             return;
         }
 
+        // 仅 Android 12 及以下需要：定位权限以外，系统定位开关也必须打开
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                && !WifiHelper.locationEnabled(this)) {
+            showStatus(KIND_WARN, "Android 12 及以下扫周边 WiFi 必须打开系统「位置信息」开关"
+                    + "（设置 → 位置信息），否则判断不了 5G 在不在。连接仍会继续尝试。");
+        }
+
         WifiManager wm = WifiHelper.wifi(this);
         if (wm == null) {
             showStatus(KIND_ERROR, "这台设备没有 WiFi 模块。");
@@ -514,22 +539,28 @@ public class MainActivity extends Activity {
 
         setLoading(true, "正在扫周边，确认信号…");
         io.execute(() -> {
-            boolean nearMine = WifiHelper.exists(this, ssid);
-            boolean nearAlt = !altSsid.isEmpty() && WifiHelper.exists(this, altSsid);
+            List<ScanResult> results = WifiHelper.scanNow(this);
+            boolean scanOk = results != null && !results.isEmpty();
+            boolean nearMine = WifiHelper.has(results, ssid);
+            boolean nearAlt = WifiHelper.has(results, altSsid);
             ui.post(() -> {
                 setLoading(false);
-                resolveAndConnect(ssid, pwd, want5g, altSsid, altPwd, nearMine, nearAlt);
+                resolveAndConnect(ssid, pwd, want5g, altSsid, altPwd, nearMine, nearAlt, scanOk);
             });
         });
     }
 
     private void resolveAndConnect(String ssid, String pwd, boolean is5g,
                                    String altSsid, String altPwd,
-                                   boolean nearMine, boolean nearAlt) {
+                                   boolean nearMine, boolean nearAlt, boolean scanOk) {
         String target = ssid;
         String targetPwd = pwd;
 
-        if (!nearMine && nearAlt) {
+        if (!scanOk) {
+            // 拿不到周边列表时不替用户改频段，直接按他点的连
+            showStatus(KIND_INFO, "没拿到周边 WiFi 列表（可能权限或系统限制），"
+                    + "无法确认信号，直接尝试连接「" + ssid + "」。");
+        } else if (!nearMine && nearAlt) {
             // 选的那个扫不到、另一个在，直接切过去，省得白连一次
             use5g = !is5g;
             applySelection();
