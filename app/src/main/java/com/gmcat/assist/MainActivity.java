@@ -2,6 +2,7 @@ package com.gmcat.assist;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -28,6 +29,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -162,6 +164,10 @@ public class MainActivity extends Activity {
 
         btnConnect5g.setOnClickListener(v -> startConnect(true));
         btnConnect24g.setOnClickListener(v -> startConnect(false));
+
+        // 名字对不上时，直接从附近列表里挑
+        hint5g.setOnClickListener(v -> showScanListDialog(true));
+        hint24g.setOnClickListener(v -> showScanListDialog(false));
 
         btnCopyAll.setOnClickListener(v -> {
             copy(buildAllText());
@@ -447,8 +453,13 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             List<ScanResult> results = WifiHelper.scanNow(MainActivity.this);
             boolean scanOk = results != null && !results.isEmpty();
+            int total = results == null ? 0 : results.size();
             boolean has5 = WifiHelper.has(results, s5);
             boolean has24 = WifiHelper.has(results, s24);
+            // 名字差一两个字符的情况很常见（识别偏差 / 光猫命名和标签不符），找出来提示用户
+            String near5 = has5 ? null : WifiHelper.nearest(results, s5, 4);
+            String near24 = has24 ? null : WifiHelper.nearest(results, s24, 4);
+
             ui.post(() -> {
                 if (!scanOk) {
                     // 没拿到列表 ≠ 没有这个网络，此时不能替用户改频段
@@ -467,6 +478,25 @@ public class MainActivity extends Activity {
                     use5g = false;
                 }
                 applySelection();
+
+                // 给出能直接照着做的诊断，而不是干巴巴一句「未扫到」
+                if (!has5) {
+                    if (near5 != null) {
+                        showStatus(KIND_WARN, "5G 没扫到「" + s5 + "」，但附近有「" + near5
+                                + "」，名字很接近，很可能就是它。"
+                                + "点 5G 卡片里的无线名称改成这个再连。");
+                    } else if (has24) {
+                        showStatus(KIND_WARN, "5G 没扫到，2.4G 在。可能光猫 5G 未开启，"
+                                + "也可能这光猫是双频合一（两个频段同名）。已先帮你选 2.4G。"
+                                + "点右上角「未扫到」可以看附近网络，手动挑名字。");
+                    } else if (total > 0) {
+                        showStatus(KIND_INFO, "周边扫到 " + total + " 个网络，没有匹配「"
+                                + s5 + "」的。核对一下卡片里的无线名称。");
+                    }
+                } else if (!has24 && near24 != null) {
+                    showStatus(KIND_INFO, "2.4G 没扫到「" + s24 + "」，附近有「" + near24
+                            + "」，名字接近。");
+                }
             });
         });
     }
@@ -474,6 +504,65 @@ public class MainActivity extends Activity {
     private void setHint(TextView tv, String text, int colorRes) {
         tv.setText(text);
         tv.setTextColor(getColor(colorRes));
+    }
+
+    /**
+     * 列出附近扫到的 WiFi，点一项就填进对应的频段。
+     * 用来解决「标签上推出来的名字和光猫实际名字不一致」的情况。
+     */
+    private void showScanListDialog(boolean for5g) {
+        if (checkSelfPermission(WifiHelper.permission()) != PackageManager.PERMISSION_GRANTED) {
+            toast("没有「附近的设备」权限，读不到周边列表");
+            return;
+        }
+        WifiManager wm = WifiHelper.wifi(this);
+        if (wm == null || !wm.isWifiEnabled()) {
+            toast("WiFi 没打开");
+            return;
+        }
+
+        setLoading(true, "正在扫描附近网络…");
+        io.execute(() -> {
+            List<ScanResult> results = WifiHelper.scanNow(this);
+            ui.post(() -> {
+                setLoading(false);
+                if (results == null || results.isEmpty()) {
+                    toast("没拿到周边 WiFi 列表，可能是权限或系统限制");
+                    return;
+                }
+                List<ScanResult> list = new ArrayList<>();
+                for (ScanResult r : results) {
+                    if (r.SSID != null && !r.SSID.isEmpty()) {
+                        list.add(r);
+                    }
+                }
+                list.sort((a, b) -> Integer.compare(b.level, a.level));
+                if (list.size() > 40) {
+                    list = new ArrayList<>(list.subList(0, 40));
+                }
+                final List<ScanResult> items = list;
+
+                String[] labels = new String[items.size()];
+                for (int i = 0; i < items.size(); i++) {
+                    ScanResult r = items.get(i);
+                    labels[i] = r.SSID + "   (" + r.level + "dBm)";
+                }
+
+                new AlertDialog.Builder(this)
+                        .setTitle(for5g ? "选一个作为 5G 名称" : "选一个作为 2.4G 名称")
+                        .setItems(labels, (d, which) -> {
+                            String picked = items.get(which).SSID;
+                            if (for5g) {
+                                etSsid5g.setText(picked);
+                            } else {
+                                etSsid24g.setText(picked);
+                            }
+                            scanBands();
+                        })
+                        .setNegativeButton("取消", null)
+                        .show();
+            });
+        });
     }
 
     // ---------------- 连接 ----------------

@@ -56,12 +56,26 @@ public final class WifiHelper {
         return (WifiManager) ctx.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
     }
 
-    /** 归一化：小写 + 去掉空格、连字符、下划线，用于宽松比对。 */
+    /**
+     * 归一化：全角转半角 + 小写 + 去掉空格、连字符、下划线。
+     * 用于宽松比对，避免因为 -5G / _5G / 全角连字符这类差异匹配不上。
+     */
     static String norm(String s) {
         if (s == null) {
             return "";
         }
-        return s.toLowerCase(Locale.ROOT).replaceAll("[\\s\\-_]", "");
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= '\uFF01' && c <= '\uFF5E') {
+                // 全角 ASCII 转半角
+                c = (char) (c - 0xFEE0);
+            } else if (c == '\u3000') {
+                c = ' ';
+            }
+            sb.append(c);
+        }
+        return sb.toString().toLowerCase(Locale.ROOT).replaceAll("[\\s\\-_\u2010-\u2015]", "");
     }
 
     /** 名字本身看起来就是 5G 频段。 */
@@ -133,12 +147,15 @@ public final class WifiHelper {
             if (!wm.isWifiEnabled()) {
                 return null;
             }
-            List<ScanResult> cached = wm.getScanResults();
-            if (cached != null && !cached.isEmpty()) {
-                return cached;
-            }
-            // 缓存是空的，主动扫一次再读
+            // 始终触发一次新扫描。缓存可能来自几分钟前（光猫还没开机时），
+            // 直接信任它会漏掉刚开机的网络。
             wm.startScan();
+            Thread.sleep(2500);
+            List<ScanResult> results = wm.getScanResults();
+            if (results != null && !results.isEmpty()) {
+                return results;
+            }
+            // 还没结果就再等一轮
             Thread.sleep(1500);
             return wm.getScanResults();
         } catch (SecurityException e) {
@@ -147,6 +164,69 @@ public final class WifiHelper {
             Thread.currentThread().interrupt();
             return null;
         }
+    }
+
+    /**
+     * 找与目标最相似、但不完全相同的 SSID。
+     * 用于诊断「识别出来的名字和实际名字差一两个字符」的情况。
+     *
+     * @param maxDist 允许的最大编辑距离，超过则认为不相似
+     * @return 最相似的 SSID，没有则 null
+     */
+    public static String nearest(List<ScanResult> results, String target, int maxDist) {
+        if (results == null || target == null || target.isEmpty()) {
+            return null;
+        }
+        String t = norm(target);
+        String best = null;
+        int bestDist = maxDist + 1;
+        for (ScanResult r : results) {
+            if (r.SSID == null || r.SSID.isEmpty()) {
+                continue;
+            }
+            String n = norm(r.SSID);
+            if (n.equals(t)) {
+                continue;
+            }
+            int d = editDistance(t, n);
+            if (d < bestDist) {
+                bestDist = d;
+                best = r.SSID;
+            }
+        }
+        return bestDist <= maxDist ? best : null;
+    }
+
+    /** Levenshtein 距离，SSID 一般十几位，直接算即可。 */
+    private static int editDistance(String a, String b) {
+        int la = a.length();
+        int lb = b.length();
+        if (la == 0) {
+            return lb;
+        }
+        if (lb == 0) {
+            return la;
+        }
+        int[] prev = new int[lb + 1];
+        int[] cur = new int[lb + 1];
+        for (int j = 0; j <= lb; j++) {
+            prev[j] = j;
+        }
+        for (int i = 1; i <= la; i++) {
+            cur[0] = i;
+            char ca = a.charAt(i - 1);
+            for (int j = 1; j <= lb; j++) {
+                int cost = ca == b.charAt(j - 1) ? 0 : 1;
+                int del = prev[j] + 1;
+                int ins = cur[j - 1] + 1;
+                int sub = prev[j - 1] + cost;
+                cur[j] = Math.min(Math.min(del, ins), sub);
+            }
+            int[] tmp = prev;
+            prev = cur;
+            cur = tmp;
+        }
+        return prev[lb];
     }
 
     /** 结果集里是否包含指定 SSID。宽松比对，忽略大小写与 - _ 空格差异。 */
