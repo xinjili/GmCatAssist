@@ -306,7 +306,7 @@ public class MainActivity extends Activity {
         card24g.setVisibility(View.VISIBLE);
         btnAdmin.setVisibility(View.GONE);
         btnShoot.setText(R.string.reshoot);
-        tvSubtitle.setText("点卡片切换推荐频段，字段都能直接改");
+        tvSubtitle.setText("点卡片切换频段，字段都能直接改");
 
         // 顶部进后台：识别出来就能点，旁边带上地址
         boxAdminTop.setVisibility(View.VISIBLE);
@@ -458,44 +458,31 @@ public class MainActivity extends Activity {
             boolean has24 = WifiHelper.has(results, s24);
             // 名字差一两个字符的情况很常见（识别偏差 / 光猫命名和标签不符），找出来提示用户
             String near5 = has5 ? null : WifiHelper.nearest(results, s5, 4);
-            String near24 = has24 ? null : WifiHelper.nearest(results, s24, 4);
 
             ui.post(() -> {
                 if (!scanOk) {
                     // 没拿到列表 ≠ 没有这个网络，此时不能替用户改频段
-                    setHint(hint5g, "扫描不可用", R.color.warn);
+                    setHint(hint5g, "未检测", R.color.text_hint);
                     setHint(hint24g, "", R.color.text_hint);
                     return;
                 }
-                setHint(hint5g, has5 ? "已扫到" : "未扫到",
-                        has5 ? R.color.ok : R.color.warn);
-                setHint(hint24g, has24 ? "已扫到" : "未扫到",
-                        has24 ? R.color.ok : R.color.warn);
+                // 只在扫到时报喜，扫不到用中性措辞：扫描结果不可靠，不能断言网络不存在
+                setHint(hint5g, has5 ? "已扫到" : "未检测到",
+                        has5 ? R.color.ok : R.color.text_hint);
+                setHint(hint24g, has24 ? "已扫到" : "未检测到",
+                        has24 ? R.color.ok : R.color.text_hint);
 
-                if (has5) {
-                    use5g = true;
-                } else if (has24) {
-                    use5g = false;
-                }
-                applySelection();
+                // 不再根据扫描结果自动改推荐频段。部分机型扫描列表不完整，
+                // 会自动把用户从 5G 挪到 2.4G，反而添乱。推荐项交给用户自己点。
 
-                // 给出能直接照着做的诊断，而不是干巴巴一句「未扫到」
-                if (!has5) {
-                    if (near5 != null) {
-                        showStatus(KIND_WARN, "5G 没扫到「" + s5 + "」，但附近有「" + near5
-                                + "」，名字很接近，很可能就是它。"
-                                + "点 5G 卡片里的无线名称改成这个再连。");
-                    } else if (has24) {
-                        showStatus(KIND_WARN, "5G 没扫到，2.4G 在。可能光猫 5G 未开启，"
-                                + "也可能这光猫是双频合一（两个频段同名）。已先帮你选 2.4G。"
-                                + "点右上角「未扫到」可以看附近网络，手动挑名字。");
-                    } else if (total > 0) {
-                        showStatus(KIND_INFO, "周边扫到 " + total + " 个网络，没有匹配「"
-                                + s5 + "」的。核对一下卡片里的无线名称。");
-                    }
-                } else if (!has24 && near24 != null) {
-                    showStatus(KIND_INFO, "2.4G 没扫到「" + s24 + "」，附近有「" + near24
-                            + "」，名字接近。");
+                // 只有发现「名字非常接近但不是同一个」时才提示，这通常意味着识别出了偏差
+                if (!has5 && near5 != null) {
+                    showStatus(KIND_INFO, "5G 没检测到「" + s5 + "」，但附近有「" + near5
+                            + "」。如果这是同一台光猫，点 5G 卡片的无线名称改成它。"
+                            + "扫描结果仅供参考，不影响连接。");
+                } else if (!has5 && !has24 && total > 0) {
+                    showStatus(KIND_INFO, "扫描只拿到 " + total + " 个网络，都不匹配。"
+                            + "部分机型扫描受限属正常现象，仍可正常连接，不影响使用。");
                 }
             });
         });
@@ -576,8 +563,6 @@ public class MainActivity extends Activity {
 
         final String ssid = (want5g ? etSsid5g : etSsid24g).getText().toString().trim();
         final String pwd = (want5g ? etPwd5g : etPwd24g).getText().toString().trim();
-        final String altSsid = (want5g ? etSsid24g : etSsid5g).getText().toString().trim();
-        final String altPwd = (want5g ? etPwd24g : etPwd5g).getText().toString().trim();
 
         if (ssid.isEmpty()) {
             showStatus(KIND_ERROR, "无线名称是空的，填一个再连。");
@@ -631,35 +616,28 @@ public class MainActivity extends Activity {
             List<ScanResult> results = WifiHelper.scanNow(this);
             boolean scanOk = results != null && !results.isEmpty();
             boolean nearMine = WifiHelper.has(results, ssid);
-            boolean nearAlt = WifiHelper.has(results, altSsid);
             ui.post(() -> {
                 setLoading(false);
-                resolveAndConnect(ssid, pwd, want5g, altSsid, altPwd, nearMine, nearAlt, scanOk);
+                resolveAndConnect(ssid, pwd, nearMine, scanOk);
             });
         });
     }
 
-    private void resolveAndConnect(String ssid, String pwd, boolean is5g,
-                                   String altSsid, String altPwd,
-                                   boolean nearMine, boolean nearAlt, boolean scanOk) {
+    /**
+     * 连接决策。注意：扫描结果只用来提示，绝不据此改变用户选择的频段。
+     * 部分机型 getScanResults() 返回的列表不完整（SSID 脱敏或受节流影响），
+     * 据此自动切换会把本来能连上的网络换掉。
+     */
+    private void resolveAndConnect(String ssid, String pwd, boolean nearMine, boolean scanOk) {
         String target = ssid;
         String targetPwd = pwd;
 
         if (!scanOk) {
-            // 拿不到周边列表时不替用户改频段，直接按他点的连
-            showStatus(KIND_INFO, "没拿到周边 WiFi 列表（可能权限或系统限制），"
-                    + "无法确认信号，直接尝试连接「" + ssid + "」。");
-        } else if (!nearMine && nearAlt) {
-            // 选的那个扫不到、另一个在，直接切过去，省得白连一次
-            use5g = !is5g;
-            applySelection();
-            target = altSsid;
-            targetPwd = altPwd;
-            showStatus(KIND_WARN, "附近没扫到「" + ssid + "」，已自动切到「"
-                    + target + "」。想连原来那个可以点回去再连。");
+            showStatus(KIND_INFO, "没拿到周边 WiFi 列表（部分机型限制），"
+                    + "直接按你的选择连接「" + ssid + "」。");
         } else if (!nearMine) {
-            showStatus(KIND_WARN, "附近没扫到「" + ssid
-                    + "」。可能名字被改过或离得太远，仍然继续尝试。");
+            showStatus(KIND_INFO, "扫描列表里没看到「" + ssid
+                    + "」，可能只是扫描受限，仍按你的选择尝试连接。");
         } else {
             showStatus(KIND_OK, "扫到「" + target + "」，正在调起系统连接。");
         }
