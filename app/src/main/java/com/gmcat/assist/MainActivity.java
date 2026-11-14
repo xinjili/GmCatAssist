@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
     private Button btnConnect24g;
     private Button btnAdmin;
     private Button btnAdminTop;
+    private Button btnSpeedTest;
     private TextView btnSettings;
     private TextView tvSubtitle;
     private TextView tvStatus;
@@ -113,6 +114,7 @@ public class MainActivity extends Activity {
         btnConnect24g = findViewById(R.id.btnConnect24g);
         btnAdmin = findViewById(R.id.btnAdmin);
         btnAdminTop = findViewById(R.id.btnAdminTop);
+        btnSpeedTest = findViewById(R.id.btnSpeedTest);
         btnSettings = findViewById(R.id.btnSettings);
         tvSubtitle = findViewById(R.id.tvSubtitle);
         tvStatus = findViewById(R.id.tvStatus);
@@ -149,6 +151,7 @@ public class MainActivity extends Activity {
         btnShoot.setOnClickListener(v -> shoot());
         btnAdmin.setOnClickListener(v -> openAdmin());
         btnAdminTop.setOnClickListener(v -> openAdmin());
+        btnSpeedTest.setOnClickListener(v -> openSpeedTest());
         btnSettings.setOnClickListener(v ->
                 startActivity(new Intent(this, SettingsActivity.class)));
 
@@ -759,8 +762,40 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ---------------- 复制 ----------------
+    /** 用系统浏览器打开设置里配置的测速页。 */
+    private void openSpeedTest() {
+        String url = Prefs.speedUrl(this);
+        if (url == null || url.trim().isEmpty()) {
+            toast("还没设测速网址，去右上角「设置」里填");
+            return;
+        }
+        String u = url.trim();
+        if (!u.startsWith("http://") && !u.startsWith("https://")) {
+            u = "http://" + u;
+        }
 
+        // 提醒一下当前测的是哪张网，免得把手机流量的速度当成宽带速度
+        String cur = WifiHelper.currentSsid(this);
+        String s24 = etSsid24g.getText().toString().trim();
+        String s5 = etSsid5g.getText().toString().trim();
+        boolean onCat = !cur.isEmpty()
+                && (WifiHelper.norm(cur).equals(WifiHelper.norm(s24))
+                || WifiHelper.norm(cur).equals(WifiHelper.norm(s5)));
+        if (!onCat && !cur.isEmpty()) {
+            toast("当前连的不是这台光猫，测的是「" + cur + "」的速度");
+        }
+
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u)));
+        } catch (ActivityNotFoundException e) {
+            copy(u);
+            showStatus(KIND_ERROR, "没找到可用的浏览器。测速地址已复制，手动打开即可。");
+        } catch (Exception e) {
+            showStatus(KIND_ERROR, "打开测速页失败：" + e.getMessage());
+        }
+    }
+
+    // ---------------- 复制 ----------------
     /** 拼一份能直接发给工单或同事的纯文本。 */
     private String buildAllText() {
         StringBuilder sb = new StringBuilder();

@@ -24,11 +24,17 @@ public final class Prefs {
         return sp(c).getString("model", "");
     }
 
-    public static void save(Context c, String baseUrl, String key, String model) {
+    /** 测速页地址，和「进后台」一样用系统浏览器打开。 */
+    public static String speedUrl(Context c) {
+        return sp(c).getString("speedUrl", "https://www.speedtest.cn/");
+    }
+
+    public static void save(Context c, String baseUrl, String key, String model, String speedUrl) {
         sp(c).edit()
                 .putString("baseUrl", baseUrl.trim())
                 .putString("apiKey", key.trim())
                 .putString("model", model.trim())
+                .putString("speedUrl", speedUrl.trim())
                 .apply();
     }
 

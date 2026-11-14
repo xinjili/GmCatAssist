@@ -77,9 +77,22 @@
                 android:layout_height="46dp"
                 android:background="@drawable/bg_btn_ghost"
                 android:minWidth="0dp"
-                android:paddingLeft="20dp"
-                android:paddingRight="20dp"
+                android:paddingLeft="15dp"
+                android:paddingRight="15dp"
                 android:text="进后台"
+                android:textColor="@color/brand"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/btnSpeedTest"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:layout_marginLeft="8dp"
+                android:background="@drawable/bg_btn_ghost"
+                android:minWidth="0dp"
+                android:paddingLeft="15dp"
+                android:paddingRight="15dp"
+                android:text="测试网速"
                 android:textColor="@color/brand"
                 android:textSize="15sp" />
 
