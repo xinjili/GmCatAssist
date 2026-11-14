@@ -432,7 +432,7 @@ public class MainActivity extends Activity {
         });
         row.addView(tvCopy);
 
-        deviceRows.addView(row);
+        container.addView(row);
         return 1;
     }
 
