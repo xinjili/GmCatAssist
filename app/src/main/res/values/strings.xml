@@ -5,7 +5,7 @@
     <string name="admin_title">光猫后台</string>
 
     <string name="shoot">拍照识别</string>
-    <string name="shoot_hint">对准光猫背面的标签</string>
+    <string name="shoot_hint">把标签拍满画面，字才清楚</string>
     <string name="reshoot">重拍</string>
     <string name="connecting">正在尝试连接…</string>
 

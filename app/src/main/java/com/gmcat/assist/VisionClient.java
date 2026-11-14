@@ -3,6 +3,8 @@ package com.gmcat.assist;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.media.ExifInterface;
 import android.net.Uri;
 import android.util.Base64;
 
@@ -53,12 +55,13 @@ public final class VisionClient {
             "你是光猫标签识别助手。图片是光猫（宽带猫）背面或侧面的贴纸。\n"
             + "只输出一个 JSON 对象，不要任何解释文字，不要 markdown 代码块。\n\n"
             + "字段含义：\n"
-            + "- ssid_5g：标签上单独印的 5G 无线名称（通常带 -5G / _5G 后缀）。标签没单独印就填空字符串。\n"
-            + "- pwd_5g：5G 无线密码。标签没单独印就填空字符串。\n"
-            + "- ssid_24g：2.4G 无线名称。若标签只印了一组无线名称，填在这里。\n"
-            + "- pwd_24g：2.4G 无线密码。若标签只印了一组密码，填在这里。\n"
+            + "- ssid_5g：5G 无线名称。标签上常写作「默认无线网络名称(SSID-5)」，值一般带 -5G 后缀。\n"
+            + "- ssid_24g：2.4G 无线名称。标签上常写作「默认无线网络名称(SSID-1)」，值不带 5G 后缀。\n"
+            + "  注意：带 (SSID-1)/(SSID-5) 这类编号时，按「名字里含不含 5G」判断频段，不要按编号数字猜。\n"
+            + "- pwd_24g / pwd_5g：无线密码。标签上可能写作「默认无线网络密钥」「WLAN密钥」「无线网络密钥」。\n"
+            + "  两个频段共用一个密码时，两个字段填同一个值。\n"
             + "- admin_url：管理地址 / 默认终端配置地址 / 登录地址。只填 IP 或域名，如 192.168.1.1。\n"
-            + "- admin_user：管理账号 / 默认终端配置账号 / 用户名。\n"
+            + "- admin_user：管理账号 / 默认终端配置账号 / 用户名。常见值是 user、useradmin、CMCCAdmin。\n"
             + "- admin_password：管理密码 / 默认终端配置密码。\n"
             + "- sn：设备序列号 / SN / 设备标识 / 条码号。完整原样抄写，包含字母前缀，不要截断、不要只取数字部分。\n"
             + "  【重要】华为光猫的 SN 以 HWTC 开头，标签上常印成十六进制 48575443 开头的一串（约 16 位）。\n"
@@ -74,9 +77,10 @@ public final class VisionClient {
             + "3. 若标签上印了两个无线名称，分别放进 ssid_5g 和 ssid_24g；只印了一个，就填进 ssid_24g。\n"
             + "4. 若标签上印了两个密码，分别放进 pwd_5g 和 pwd_24g；只印了一个，就填进 pwd_24g。\n"
             + "5. 若密码中间被排版空格或连字符分组（如 AB12 CD34），去掉分组符号输出连续字符。\n"
-            + "6. 特别注意区分容易混淆的字符：0 与 O、1 与 l 与 I、5 与 S、2 与 Z。\n"
-            + "7. 只要标签上有 SN / 序列号 / 设备标识，就必须填进 sn 字段，绝不能塞进 extra。\n"
-            + "8. 只输出 JSON，不要输出其他任何内容。\n\n"
+            + "6. 若一行里有括号注释，如 PON SN: HWTC1D8B11AF(48575443 1D8B11AF)，取括号外的主值。\n"
+            + "7. 特别注意区分容易混淆的字符：0 与 O、1 与 l 与 I、5 与 S、2 与 Z。\n"
+            + "8. 只要标签上有 SN / 序列号 / 设备标识，就必须填进 sn 字段，绝不能塞进 extra。\n"
+            + "9. 只输出 JSON，不要输出其他任何内容。\n\n"
             + "输出的 JSON 结构：\n"
             + "{\"ssid_5g\":\"\",\"pwd_5g\":\"\",\"ssid_24g\":\"\",\"pwd_24g\":\"\","
             + "\"admin_url\":\"\",\"admin_user\":\"\",\"admin_password\":\"\","
@@ -84,12 +88,24 @@ public final class VisionClient {
             + "\"confidence\":\"\",\"notes\":\"\"}";
 
     public static Result recognize(Context ctx, Uri imageUri) throws Exception {
-        byte[] jpeg = loadAndCompress(ctx, imageUri, 1800);
+        byte[] jpeg = loadAndCompress(ctx, imageUri, 1600);
         String b64 = Base64.encodeToString(jpeg, Base64.NO_WRAP);
-        return callApi(ctx, b64);
+        try {
+            return callApi(ctx, b64, true);
+        } catch (Exception e) {
+            // 少数兼容服务不认 thinking 字段，去掉再试一次
+            String m = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+            boolean fieldRejected = m.contains("thinking") || m.contains("reasoning")
+                    || m.contains("unknown") || m.contains("extra field");
+            if (fieldRejected) {
+                return callApi(ctx, b64, false);
+            }
+            throw e;
+        }
     }
 
-    private static Result callApi(Context ctx, String base64) throws Exception {
+    private static Result callApi(Context ctx, String base64, boolean disableThinking)
+            throws Exception {
         String url = endpoint(Prefs.baseUrl(ctx));
         String key = Prefs.apiKey(ctx);
         String model = Prefs.model(ctx);
@@ -100,6 +116,16 @@ public final class VisionClient {
         JSONObject body = new JSONObject();
         body.put("model", model);
         body.put("temperature", 0);
+        // 输出只是一小段 JSON，给足余量即可，避免模型话痨
+        body.put("max_tokens", 800);
+        if (disableThinking) {
+            // 关掉思维链。识标签是纯字段提取，思考纯属浪费时间。
+            // 用官方文档明确支持的写法，不要额外塞 reasoning_effort，
+            // 那个字段只接受 low/high/max，传 none 可能直接 400。
+            JSONObject thinking = new JSONObject();
+            thinking.put("type", "disabled");
+            body.put("thinking", thinking);
+        }
 
         JSONArray content = new JSONArray();
 
@@ -434,6 +460,10 @@ public final class VisionClient {
             throw new IOException("照片解码失败，请重拍");
         }
 
+        // 相机常把方向写在 EXIF 里而不是真的旋转像素。
+        // 不矫正的话，模型看到的是躺倒的标签，既慢又容易认错。
+        bmp = applyExifOrientation(ctx, uri, bmp);
+
         int w = bmp.getWidth();
         int h = bmp.getHeight();
         int cur = Math.max(w, h);
@@ -454,5 +484,62 @@ public final class VisionClient {
     }
 
     private VisionClient() {
+    }
+
+    /** 按 EXIF 里的方向标记把照片摆正。相机竖拍时像素常常是横的。 */
+    private static Bitmap applyExifOrientation(Context ctx, Uri uri, Bitmap src) {
+        int orientation;
+        try (InputStream is = ctx.getContentResolver().openInputStream(uri)) {
+            if (is == null) {
+                return src;
+            }
+            ExifInterface exif = new ExifInterface(is);
+            orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL);
+        } catch (Exception e) {
+            return src;
+        }
+        if (orientation == ExifInterface.ORIENTATION_NORMAL
+                || orientation == ExifInterface.ORIENTATION_UNDEFINED) {
+            return src;
+        }
+
+        Matrix m = new Matrix();
+        switch (orientation) {
+            case ExifInterface.ORIENTATION_ROTATE_90:
+                m.postRotate(90);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_180:
+                m.postRotate(180);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_270:
+                m.postRotate(270);
+                break;
+            case ExifInterface.ORIENTATION_FLIP_HORIZONTAL:
+                m.postScale(-1, 1);
+                break;
+            case ExifInterface.ORIENTATION_FLIP_VERTICAL:
+                m.postScale(1, -1);
+                break;
+            case ExifInterface.ORIENTATION_TRANSPOSE:
+                m.postRotate(90);
+                m.postScale(-1, 1);
+                break;
+            case ExifInterface.ORIENTATION_TRANSVERSE:
+                m.postRotate(270);
+                m.postScale(-1, 1);
+                break;
+            default:
+                return src;
+        }
+        try {
+            Bitmap rotated = Bitmap.createBitmap(src, 0, 0, src.getWidth(), src.getHeight(), m, true);
+            if (rotated != src) {
+                src.recycle();
+            }
+            return rotated;
+        } catch (Exception e) {
+            return src;
+        }
     }
 }
