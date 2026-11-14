@@ -68,6 +68,8 @@ public class MainActivity extends Activity {
     private LinearLayout cardDevice;
     private LinearLayout deviceRows;
     private LinearLayout snBox;
+    private LinearLayout cardCredential;
+    private LinearLayout credentialRows;
 
     private TextView dot5g;
     private TextView dot24g;
@@ -102,6 +104,7 @@ public class MainActivity extends Activity {
         bindViews();
         bindClicks();
         applySelection();
+        buildCredentialCard();
 
         if (!Prefs.ready(this)) {
             showStatus(KIND_WARN, "识别接口还没配置。点右上角「设置」填入 API Key 和模型名，先配一次就好。");
@@ -132,6 +135,8 @@ public class MainActivity extends Activity {
         cardDevice = findViewById(R.id.cardDevice);
         deviceRows = findViewById(R.id.deviceRows);
         snBox = findViewById(R.id.snBox);
+        cardCredential = findViewById(R.id.cardCredential);
+        credentialRows = findViewById(R.id.credentialRows);
 
         dot5g = findViewById(R.id.dot5g);
         dot24g = findViewById(R.id.dot24g);
@@ -286,6 +291,7 @@ public class MainActivity extends Activity {
             card5g.setVisibility(View.GONE);
             card24g.setVisibility(View.GONE);
             cardDevice.setVisibility(View.GONE);
+            cardCredential.setVisibility(View.GONE);
             boxAdminTop.setVisibility(View.GONE);
             btnAdmin.setVisibility(View.GONE);
             String extra = (r != null && !r.note.isEmpty()) ? "（" + r.note + "）" : "";
@@ -309,6 +315,7 @@ public class MainActivity extends Activity {
         boolean show5g = r.hasSeparate5g && !r.ssid5g.isEmpty();
         card5g.setVisibility(show5g ? View.VISIBLE : View.GONE);
         card24g.setVisibility(View.VISIBLE);
+        cardCredential.setVisibility(View.VISIBLE);
         btnAdmin.setVisibility(View.GONE);
         btnShoot.setText(R.string.reshoot);
         tvSubtitle.setText("点卡片切换频段，字段都能直接改");
@@ -384,6 +391,10 @@ public class MainActivity extends Activity {
 
     /** 生成一行「标签 值 复制」，返回 1 表示加了一行。 */
     private int addDeviceRow(String label, String value) {
+        return addKvRow(deviceRows, label, value);
+    }
+
+    private int addKvRow(LinearLayout container, String label, String value) {
         if (value == null || value.isEmpty()) {
             return 0;
         }
@@ -423,6 +434,36 @@ public class MainActivity extends Activity {
 
         deviceRows.addView(row);
         return 1;
+    }
+
+    /**
+     * 三家运营商的出厂默认超级密码，静态参考数据，与识别结果无关。
+     * 注意：多数光猫已被运营商通过 TR-069 远程改成动态密码，这里的值经常失效。
+     */
+    private void buildCredentialCard() {
+        if (credentialRows.getChildCount() > 0) {
+            return;
+        }
+        addCredentialGroup("中国移动", "CMCCAdmin", "aDm8H%MdA");
+        addCredentialGroup("中国联通", "CUAdmin", "CUAdmin");
+        addCredentialGroup("中国电信", "telecomadmin", "nE7jA%5m");
+    }
+
+    private void addCredentialGroup(String carrier, String user, String pwd) {
+        TextView title = new TextView(this);
+        title.setText(carrier);
+        title.setTextSize(14);
+        title.setTextColor(getColor(R.color.brand));
+        title.setTypeface(null, Typeface.BOLD);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(14);
+        title.setLayoutParams(lp);
+        credentialRows.addView(title);
+
+        addKvRow(credentialRows, "账号", user);
+        addKvRow(credentialRows, "密码", pwd);
     }
 
     /**

@@ -485,6 +485,41 @@
                 android:singleLine="true" />
         </LinearLayout>
 
+        <!-- 默认超级密码参考 -->
+        <LinearLayout
+            android:id="@+id/cardCredential"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="默认超级密码"
+                android:textColor="@color/text_primary"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:lineSpacingExtra="3dp"
+                android:text="出厂默认值。多数光猫已被运营商通过远程管理改成动态密码，登录失败属正常，直接打客服要（电信 10000 / 移动 10086 / 联通 10010）。"
+                android:textColor="@color/text_hint"
+                android:textSize="11sp" />
+
+            <LinearLayout
+                android:id="@+id/credentialRows"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </LinearLayout>
+
         <!-- 进后台（底部，连上之后出现） -->
         <Button
             android:id="@+id/btnAdmin"
