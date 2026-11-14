@@ -302,7 +302,9 @@ public class MainActivity extends Activity {
 
         showDeviceInfo(r);
 
-        card5g.setVisibility(View.VISIBLE);
+        // 双频合一的设备只有一个名字，5G 卡片直接不显示，免得点了个不存在的网络
+        boolean show5g = r.hasSeparate5g && !r.ssid5g.isEmpty();
+        card5g.setVisibility(show5g ? View.VISIBLE : View.GONE);
         card24g.setVisibility(View.VISIBLE);
         btnAdmin.setVisibility(View.GONE);
         btnShoot.setText(R.string.reshoot);
@@ -314,7 +316,7 @@ public class MainActivity extends Activity {
         tvAdminUrlHint.setText("（" + hint + "）");
 
         // 默认 5G，等扫描结果出来再按实际覆盖
-        use5g = true;
+        use5g = show5g;
         applySelection();
 
         if (!r.note.isEmpty() || "low".equals(r.confidence) || "medium".equals(r.confidence)) {

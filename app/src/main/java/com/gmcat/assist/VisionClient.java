@@ -43,6 +43,9 @@ public final class VisionClient {
         public String confidence = "";
         public String note = "";
 
+        /** 标签上是否印了独立的 5G 无线名称。双频合一的设备只有一个名字。 */
+        public boolean hasSeparate5g = true;
+
         /** 至少有一组 SSID + 密码可用。 */
         public boolean usable() {
             boolean a = !ssid5g.isEmpty() && !pwd5g.isEmpty();
@@ -52,40 +55,51 @@ public final class VisionClient {
     }
 
     private static final String PROMPT =
-            "你是光猫标签识别助手。图片是光猫（宽带猫）背面或侧面的贴纸。\n"
+            "你是运营商光猫（宽带调制解调器 / 智能家庭网关）标签识别助手。图片是设备背面或侧面的贴纸。\n"
             + "只输出一个 JSON 对象，不要任何解释文字，不要 markdown 代码块。\n\n"
-            + "字段含义：\n"
-            + "- ssid_5g：5G 无线名称。标签上常写作「默认无线网络名称(SSID-5)」，值一般带 -5G 后缀。\n"
-            + "- ssid_24g：2.4G 无线名称。标签上常写作「默认无线网络名称(SSID-1)」，值不带 5G 后缀。\n"
-            + "  注意：带 (SSID-1)/(SSID-5) 这类编号时，按「名字里含不含 5G」判断频段，不要按编号数字猜。\n"
-            + "- pwd_24g / pwd_5g：无线密码。标签上可能写作「默认无线网络密钥」「WLAN密钥」「无线网络密钥」。\n"
-            + "  两个频段共用一个密码时，两个字段填同一个值。\n"
-            + "- admin_url：管理地址 / 默认终端配置地址 / 登录地址。只填 IP 或域名，如 192.168.1.1。\n"
-            + "- admin_user：管理账号 / 默认终端配置账号 / 用户名。常见值是 user、useradmin、CMCCAdmin。\n"
-            + "- admin_password：管理密码 / 默认终端配置密码。\n"
-            + "- sn：设备序列号 / SN / 设备标识 / 条码号。完整原样抄写，包含字母前缀，不要截断、不要只取数字部分。\n"
-            + "  【重要】华为光猫的 SN 以 HWTC 开头，标签上常印成十六进制 48575443 开头的一串（约 16 位）。\n"
-            + "  标签上若同时有多个编号，优先把带 HWTC 或 48575443 前缀的那个作为 sn。\n"
-            + "- mac：MAC 地址。\n"
-            + "- model：设备型号 / 产品型号。\n"
-            + "- extra：其他有用信息（PON SN、生产日期、厂商等），写成「名称: 值」，多条用分号分隔。\n"
-            + "- confidence：high / medium / low，对整体识别准确度的判断。\n"
-            + "- notes：若有字段缺失或模糊，简短说明；否则空字符串。\n\n"
+            + "【重要前提】不同品牌、不同运营商的标签排版差异极大：华为、中兴、烽火、吉比特、天邑、\n"
+            + "创维、九联、华勤、诺基亚贝尔等，字段名、排列方式、中英文、有无条形码都不相同，\n"
+            + "也可能出现竖排、表格、多列、图文混排。请按信息的**含义**去找，\n"
+            + "不要依赖固定字段名、固定位置或固定排版。\n\n"
+            + "需要提取的内容：\n\n"
+            + "1) 无线网络名称（SSID / WLAN名称 / WiFi名称 / 默认无线网络名称 / 无线网络标识 等）\n"
+            + "   - 2.4G 频段的名称放在 ssid_24g\n"
+            + "   - 5G 频段的名称放在 ssid_5g\n"
+            + "   - 若用 SSID-1 / SSID-5 / 2.4G / 5G 等编号区分，按「名称里是否含 5G」判断归属；\n"
+            + "     编号里的数字本身不代表频段，不要按数字猜。\n"
+            + "   - 若标签只印了一个无线名称，填进 ssid_24g，ssid_5g 留空，并把 has_separate_5g 设为 false。\n\n"
+            + "2) 无线密码（WLAN密码 / 无线网络密钥 / WiFi密码 / WPA密钥 / 预共享密钥 等）\n"
+            + "   - 2.4G 对应 pwd_24g，5G 对应 pwd_5g\n"
+            + "   - 两个频段共用一个密码时，两个字段填同一个值；只印一个密码时，两个都填它\n\n"
+            + "3) 管理后台\n"
+            + "   - admin_url：管理地址 / 默认终端配置地址 / 登录IP，只填 IP 或域名\n"
+            + "   - admin_user：管理账号 / 用户名（可能是 user、useradmin、CMCCAdmin、admin 等）\n"
+            + "   - admin_password：管理密码\n\n"
+            + "4) 设备信息\n"
+            + "   - sn：SN / 序列号 / 设备标识 / PON SN / 条码号，完整原样抄写，含字母前缀，不要截断\n"
+            + "     华为光猫的 SN 以 HWTC 开头，也常印成十六进制 48575443 开头的一串\n"
+            + "   - mac：MAC 地址\n"
+            + "   - model：设备型号 / 产品型号 / 设备类型\n"
+            + "   - extra：其他有用信息（PON SN、生产日期、厂商、批次等），写成「名称: 值」，多条用分号分隔\n\n"
+            + "5) 元信息\n"
+            + "   - has_separate_5g：标签上是否印了独立的 5G 无线名称（true / false）\n"
+            + "   - confidence：high / medium / low\n"
+            + "   - notes：缺失、模糊、有歧义、存在多个候选等情况，简短说明；否则空字符串\n\n"
             + "规则：\n"
             + "1. 严格照抄，绝不推测、绝不编造。看不清的字段填空字符串。\n"
-            + "2. 无线名称不要自己添加或删除任何字符，标签上怎么印就怎么抄。\n"
-            + "3. 若标签上印了两个无线名称，分别放进 ssid_5g 和 ssid_24g；只印了一个，就填进 ssid_24g。\n"
-            + "4. 若标签上印了两个密码，分别放进 pwd_5g 和 pwd_24g；只印了一个，就填进 pwd_24g。\n"
-            + "5. 若密码中间被排版空格或连字符分组（如 AB12 CD34），去掉分组符号输出连续字符。\n"
-            + "6. 若一行里有括号注释，如 PON SN: HWTC1D8B11AF(48575443 1D8B11AF)，取括号外的主值。\n"
-            + "7. 特别注意区分容易混淆的字符：0 与 O、1 与 l 与 I、5 与 S、2 与 Z。\n"
-            + "8. 只要标签上有 SN / 序列号 / 设备标识，就必须填进 sn 字段，绝不能塞进 extra。\n"
+            + "2. **不要因为字段名没见过就留空**，按含义判断它是什么。\n"
+            + "3. 无线名称原样抄写，不要自行添加或删除任何字符。\n"
+            + "4. 若密码中间被排版空格或连字符分组（如 AB12 CD34），去掉分组符号输出连续字符。\n"
+            + "5. 若一行里有括号注释，如 PON SN: HWTC1D8B11AF(48575443 1D8B11AF)，取括号外的主值。\n"
+            + "6. 特别注意区分容易混淆的字符：0 与 O、1 与 l 与 I、5 与 S、2 与 Z。\n"
+            + "7. 只要标签上有 SN，就必须填进 sn 字段，绝不能塞进 extra。\n"
+            + "8. 同一类信息出现多组候选时，取最可能是「出厂默认配置」的那组，其余写进 notes。\n"
             + "9. 只输出 JSON，不要输出其他任何内容。\n\n"
             + "输出的 JSON 结构：\n"
             + "{\"ssid_5g\":\"\",\"pwd_5g\":\"\",\"ssid_24g\":\"\",\"pwd_24g\":\"\","
             + "\"admin_url\":\"\",\"admin_user\":\"\",\"admin_password\":\"\","
             + "\"sn\":\"\",\"mac\":\"\",\"model\":\"\",\"extra\":\"\","
-            + "\"confidence\":\"\",\"notes\":\"\"}";
+            + "\"has_separate_5g\":true,\"confidence\":\"\",\"notes\":\"\"}";
 
     public static Result recognize(Context ctx, Uri imageUri) throws Exception {
         byte[] jpeg = loadAndCompress(ctx, imageUri, 1600);
@@ -246,6 +260,7 @@ public final class VisionClient {
 
         r.confidence = clean(o.optString("confidence")).toLowerCase();
         r.note = clean(o.optString("notes"));
+        r.hasSeparate5g = o.optBoolean("has_separate_5g", true);
 
         deriveBands(r);
         normalizeSn(r);
@@ -324,7 +339,9 @@ public final class VisionClient {
      * 这里把缺失的一半补齐，让界面上两个框都有内容。
      */
     private static void deriveBands(Result r) {
-        if (r.ssid5g.isEmpty() && !r.ssid24g.isEmpty() && !looks5g(r.ssid24g)) {
+        // 双频合一的设备只有一个名字，硬推 -5G 会造出一个不存在的网络
+        if (r.ssid5g.isEmpty() && !r.ssid24g.isEmpty()
+                && r.hasSeparate5g && !looks5g(r.ssid24g)) {
             r.ssid5g = r.ssid24g + "-5G";
         }
         if (r.ssid24g.isEmpty() && !r.ssid5g.isEmpty()) {
